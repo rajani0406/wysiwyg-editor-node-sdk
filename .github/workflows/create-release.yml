@@ -1,0 +1,60 @@
+name: Auto Release on Sync Version Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  create_release:
+    if: >
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'sync-version-')
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout public repo (main after merge)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # Read version from package.json
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          echo "VERSION=$VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      # Optional – check if tag already exists
+      - name: Check if tag exists
+        id: tagcheck
+        run: |
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "TAG_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "TAG_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      # Create release only if tag NOT exists
+      - name: Create Release
+        if: env.TAG_EXISTS == 'false'
+        uses: actions/create-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          release_name: Release v${{ env.VERSION }}
+          body: |
+            Auto-generated release from sync-version PR merge.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Skip if already exists
+      - name: Skip Release (tag exists)
+        if: env.TAG_EXISTS == 'true'
+        run: echo "Tag v${VERSION} already exists. Skipping release."
